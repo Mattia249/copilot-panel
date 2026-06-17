@@ -150,5 +150,3 @@ In `agent` mode the extension can call local tools for:
 - `browser`: open a URL in your system browser
 
 `edit` and `execute` require approval by default.
-
-Ciao mamma sono in tv!
