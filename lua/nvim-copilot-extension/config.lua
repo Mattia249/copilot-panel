@@ -5,6 +5,10 @@ local defaults = {
     side = "right",
     width = 0.36,
   },
+  chat = {
+    persist = true,
+    max_sessions = 50,
+  },
   auth = {
     provider = "auto",
   },
@@ -29,6 +33,11 @@ local defaults = {
     select_model = "<leader>am",
     select_mode = "<leader>aM",
     select_agent = "<leader>aA",
+    select_chat = "<leader>ac",
+    new_chat = "<leader>an",
+    delete_chat = "<leader>ad",
+    accept_all_changes = "<leader>ay",
+    accept_all_changes_global = "<leader>aY",
     inline_edit = "<leader>ae",
     quick_prompt = "<leader>ap",
   },

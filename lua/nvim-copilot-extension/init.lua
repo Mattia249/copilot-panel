@@ -1,3 +1,4 @@
+local chats = require("nvim-copilot-extension.chats")
 local config = require("nvim-copilot-extension.config")
 local commands = require("nvim-copilot-extension.commands")
 local state = require("nvim-copilot-extension.state")
@@ -6,6 +7,7 @@ local M = {}
 
 function M.setup(opts)
   config.setup(opts)
+  chats.setup(config.get())
   state.setup(config.get())
   commands.setup(config.get())
 end

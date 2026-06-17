@@ -6,16 +6,103 @@ local tools = require("nvim-copilot-extension.tools")
 
 local M = {}
 
+local known_tools = {
+  read = true,
+  search = true,
+  edit = true,
+  execute = true,
+  todo = true,
+  web = true,
+  browser = true,
+}
+
+local function extract_json_candidate(text)
+  if not text or text == "" then
+    return nil
+  end
+
+  local fenced = text:match("```json%s*(.-)%s*```")
+  if fenced and fenced ~= "" then
+    return fenced
+  end
+
+  local start_pos = text:find("{", 1, true)
+  if not start_pos then
+    return nil
+  end
+
+  local depth = 0
+  local in_string = false
+  local escaped = false
+  for index = start_pos, #text do
+    local char = text:sub(index, index)
+    if in_string then
+      if escaped then
+        escaped = false
+      elseif char == "\\" then
+        escaped = true
+      elseif char == '"' then
+        in_string = false
+      end
+    else
+      if char == '"' then
+        in_string = true
+      elseif char == "{" then
+        depth = depth + 1
+      elseif char == "}" then
+        depth = depth - 1
+        if depth == 0 then
+          return text:sub(start_pos, index)
+        end
+      end
+    end
+  end
+
+  return text
+end
+
 local function decode_json_block(text)
   if not text or text == "" then
     return nil
   end
 
-  local candidate = text:match("```json%s*(.-)%s*```") or text
+  local candidate = extract_json_candidate(text)
+  if not candidate or candidate == "" then
+    return nil
+  end
   local ok, decoded = pcall(vim.json.decode, candidate)
   if ok and type(decoded) == "table" then
     return decoded
   end
+end
+
+local function normalize_response(decoded)
+  if type(decoded) ~= "table" then
+    return nil
+  end
+
+  if type(decoded.type) == "string" and known_tools[decoded.type] and decoded.tool == nil then
+    local tool_name = decoded.type
+    local args = vim.deepcopy(decoded)
+    args.type = nil
+    args.reason = nil
+    return {
+      type = "tool_call",
+      tool = tool_name,
+      args = args,
+      reason = decoded.reason,
+    }
+  end
+
+  if decoded.type == "final" and type(decoded.content) == "string" then
+    local nested = decode_json_block(decoded.content)
+    local normalized_nested = normalize_response(nested)
+    if normalized_nested and normalized_nested.type == "tool_call" then
+      return normalized_nested
+    end
+  end
+
+  return decoded
 end
 
 local function system_prompt()
@@ -31,8 +118,13 @@ local function system_prompt()
     "Respond with exactly one JSON object and no markdown.",
     'To use a tool, respond with: {"type":"tool_call","tool":"read","args":{...},"reason":"optional"}',
     'When you are done, respond with: {"type":"final","content":"your final answer"}',
+    "Do not include explanatory prose before or after a tool JSON object.",
     "Keep tool calls focused and minimal.",
+    "When editing files, prefer the smallest safe change.",
+    "Prefer edit action=replace for targeted text changes and action=append for adding content at the end of a file.",
+    "Do not rewrite an entire file with action=set unless the user explicitly asked to replace the whole file.",
     "When you produce final content, write it as the user-facing answer.",
+    "After tools succeed, give a short summary and do not repeat raw tool logs, JSON, or absolute paths.",
     cfg.agent.require_approval and "Edits and shell commands may require approval; if denied, adapt and continue." or "",
     tools.describe(),
   }
@@ -91,14 +183,15 @@ local function stream_text(text, handlers)
   push()
 end
 
-function M.run(prompt, handlers)
+function M.run(history_messages, errors, handlers)
   handlers = handlers or {}
-  local enriched, errors = context.to_message(prompt)
   local cfg = config.get()
   local messages = {
     { role = "system", content = system_prompt() },
-    { role = "user", content = enriched },
   }
+  for _, message in ipairs(history_messages or {}) do
+    table.insert(messages, message)
+  end
   local step = 0
   local max_steps = cfg.agent.max_steps or 8
   local assistant_started = false
@@ -144,7 +237,7 @@ function M.run(prompt, handlers)
         return
       end
 
-      local decoded = decode_json_block(answer)
+      local decoded = normalize_response(decode_json_block(answer))
       if not decoded then
         finish(answer, nil)
         return

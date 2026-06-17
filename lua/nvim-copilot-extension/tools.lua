@@ -1,10 +1,37 @@
 local config = require("nvim-copilot-extension.config")
+local edit_review = require("nvim-copilot-extension.edit_review")
 local todo = require("nvim-copilot-extension.todo")
 
 local M = {}
 
 local function tool_error(message)
   return nil, message
+end
+
+local function short_path(path)
+  local value = vim.trim(path or "")
+  if value == "" then
+    return "[unknown]"
+  end
+  return value:gsub("\\", "/"):match("([^/]+)$") or value
+end
+
+local function count_nonempty_lines(text)
+  local count = 0
+  for _, line in ipairs(vim.split(text or "", "\n", { plain = true })) do
+    if vim.trim(line) ~= "" then
+      count = count + 1
+    end
+  end
+  return count
+end
+
+local function truncate(text, limit)
+  local value = vim.trim(text or "")
+  if #value <= limit then
+    return value
+  end
+  return value:sub(1, limit - 3) .. "..."
 end
 
 local function read_file(path, start_line, end_line)
@@ -82,56 +109,69 @@ local function request_approval(kind, summary, cb)
   end)
 end
 
+local function build_desired_text(resolved, args)
+  local action = args.action or "replace"
+  local lines = {}
+  if vim.fn.filereadable(resolved) == 1 then
+    lines = vim.fn.readfile(resolved)
+  elseif action ~= "create" and action ~= "set" then
+    return nil, "File not readable: " .. args.path
+  end
+
+  if action == "create" or action == "set" then
+    return args.content or ""
+  end
+
+  if action == "append" then
+    local content = args.content or ""
+    local existing = table.concat(lines, "\n")
+    if existing ~= "" and not existing:match("\n$") then
+      existing = existing .. "\n"
+    end
+    return existing .. content
+  end
+
+  local old_text = args.old_text
+  local new_text = args.new_text or ""
+  if not old_text or old_text == "" then
+    return nil, "edit.replace requires old_text"
+  end
+
+  local content = table.concat(lines, "\n")
+  local replaced, count = content:gsub(vim.pesc(old_text), new_text, tonumber(args.count) or 1)
+  if count == 0 then
+    return nil, "Text to replace not found"
+  end
+
+  return replaced
+end
+
 local function edit_file(args, cb)
   local path = vim.trim(args.path or "")
-  local action = args.action or "replace"
   if path == "" then
     cb(nil, "edit requires path")
     return
   end
 
   local resolved = vim.fn.fnamemodify(path, ":p")
-  local summary = string.format("%s %s", action, resolved)
+  local desired_text, err = build_desired_text(resolved, args)
+  if not desired_text then
+    cb(nil, err)
+    return
+  end
 
-  request_approval("edit", summary, function(approved)
-    if not approved then
-      cb(nil, "Edit denied by user")
-      return
-    end
+  local count, review_err = edit_review.propose(path, desired_text)
+  if not count then
+    cb(nil, review_err)
+    return
+  end
 
-    local lines = {}
-    if vim.fn.filereadable(resolved) == 1 then
-      lines = vim.fn.readfile(resolved)
-    elseif action ~= "create" and action ~= "set" then
-      cb(nil, "File not readable: " .. path)
-      return
-    end
+  if count == 0 then
+    cb("No changes needed for " .. short_path(path))
+    return
+  end
 
-    if action == "create" or action == "set" then
-      local content = args.content or ""
-      vim.fn.mkdir(vim.fn.fnamemodify(resolved, ":h"), "p")
-      vim.fn.writefile(vim.split(content, "\n", { plain = true }), resolved)
-      cb("Wrote file: " .. resolved)
-      return
-    end
-
-    local old_text = args.old_text
-    local new_text = args.new_text or ""
-    if not old_text or old_text == "" then
-      cb(nil, "edit.replace requires old_text")
-      return
-    end
-
-    local content = table.concat(lines, "\n")
-    local replaced, count = content:gsub(vim.pesc(old_text), new_text, tonumber(args.count) or 1)
-    if count == 0 then
-      cb(nil, "Text to replace not found")
-      return
-    end
-
-    vim.fn.writefile(vim.split(replaced, "\n", { plain = true }), resolved)
-    cb(string.format("Updated %s (%d replacement%s)", resolved, count, count == 1 and "" or "s"))
-  end)
+  cb(string.format("Pending review in %s (%d block%s)", short_path(path), count, count == 1 and "" or "s"))
 end
 
 local function execute_command(args, cb)
@@ -261,7 +301,7 @@ local tool_specs = {
   },
   {
     name = "edit",
-    description = "Create or edit a file with approval. Args: { path, action=create|set|replace, content?, old_text?, new_text?, count? }",
+    description = "Create or edit a file with inline per-block review. Args: { path, action=create|append|set|replace, content?, old_text?, new_text?, count? }",
   },
   {
     name = "execute",
@@ -295,22 +335,25 @@ function M.format_call(call)
 
   if tool == "edit" then
     local action = args.action or "edit"
-    return string.format("%sing %s", action, args.path or "[unknown file]")
+    if action == "append" then
+      return string.format("appending to %s", short_path(args.path))
+    end
+    return string.format("%sing %s", action, short_path(args.path))
   end
 
   if tool == "read" then
     if args.start_line or args.end_line then
-      return string.format("reading %s (%s-%s)", args.path or "[unknown file]", args.start_line or 1, args.end_line or "?")
+      return string.format("reading %s (%s-%s)", short_path(args.path), args.start_line or 1, args.end_line or "?")
     end
-    return string.format("reading %s", args.path or "[unknown file]")
+    return string.format("reading %s", short_path(args.path))
   end
 
   if tool == "search" then
-    return string.format('searching %s for "%s"', args.path or "workspace", args.query or "")
+    return string.format('searching %s for "%s"', short_path(args.path or "workspace"), truncate(args.query or "", 40))
   end
 
   if tool == "execute" then
-    return string.format("running %s", args.command or "[command]")
+    return string.format("running %s", truncate(args.command or "[command]", 48))
   end
 
   if tool == "todo" then
@@ -318,11 +361,11 @@ function M.format_call(call)
   end
 
   if tool == "web" then
-    return args.url and ("fetching " .. args.url) or ('searching web for "' .. (args.query or "") .. '"')
+    return args.url and ("fetching " .. truncate(args.url, 48)) or ('searching web for "' .. truncate(args.query or "", 40) .. '"')
   end
 
   if tool == "browser" then
-    return "opening " .. (args.url or "[url]")
+    return "opening " .. truncate(args.url or "[url]", 48)
   end
 
   return tool
@@ -334,15 +377,43 @@ function M.format_result(call, output, err)
   end
 
   local tool = call.tool or call.name or "tool"
-  if tool == "edit" or tool == "browser" or tool == "todo" then
-    return output or (tool .. " completed")
+  local args = call.args or {}
+
+  if tool == "edit" then
+    return output or string.format("pending review in %s", short_path(args.path))
   end
 
   if tool == "execute" then
-    return output or "command completed"
+    local exit_code = output and output:match("Exit code:%s*(%-?%d+)")
+    if exit_code then
+      return "done - exit " .. exit_code
+    end
+    return "done"
   end
 
-  return output or (tool .. " completed")
+  if tool == "read" then
+    return string.format("done - loaded %s", short_path(args.path))
+  end
+
+  if tool == "search" then
+    local matches = count_nonempty_lines(output or "")
+    return matches == 0 and "done - no matches" or string.format("done - %d matches", matches)
+  end
+
+  if tool == "web" then
+    return "done - fetched results"
+  end
+
+  if tool == "browser" then
+    return "done - opened in browser"
+  end
+
+  if tool == "todo" then
+    local action = args.action or "updated"
+    return "done - todo " .. action
+  end
+
+  return "done"
 end
 
 function M.execute(call, cb)

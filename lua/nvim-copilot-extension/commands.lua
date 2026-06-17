@@ -1,5 +1,6 @@
 local auth = require("nvim-copilot-extension.auth")
 local diff = require("nvim-copilot-extension.diff")
+local edit_review = require("nvim-copilot-extension.edit_review")
 local models = require("nvim-copilot-extension.models")
 local state = require("nvim-copilot-extension.state")
 local tools = require("nvim-copilot-extension.tools")
@@ -27,12 +28,36 @@ function M.setup(cfg)
     ui.quick_prompt()
   end, {})
 
+  vim.api.nvim_create_user_command("CopilotExtNewChat", function()
+    ui.new_chat()
+  end, {})
+
+  vim.api.nvim_create_user_command("CopilotExtChats", function()
+    ui.select_chat()
+  end, {})
+
+  vim.api.nvim_create_user_command("CopilotExtDeleteChat", function()
+    ui.delete_chat()
+  end, {})
+
+  vim.api.nvim_create_user_command("CopilotExtAcceptAllChanges", function()
+    edit_review.accept_all()
+  end, {})
+
+  vim.api.nvim_create_user_command("CopilotExtAcceptAllChangesGlobal", function()
+    edit_review.accept_all_global()
+  end, {})
+
   vim.api.nvim_create_user_command("CopilotExtInlineEdit", function(opts)
     ui.inline_edit(opts)
   end, { range = true })
 
   vim.api.nvim_create_user_command("CopilotExtApplyLastDiff", function()
     diff.apply_last()
+  end, {})
+
+  vim.api.nvim_create_user_command("CopilotExtReviewLastDiff", function()
+    diff.open_last_review()
   end, {})
 
   vim.api.nvim_create_user_command("CopilotExtAuth", function()
@@ -135,6 +160,11 @@ function M.setup(cfg)
   map(cfg.keymaps.select_model, state.select_model, "CopilotExt select model")
   map(cfg.keymaps.select_mode, state.select_mode, "CopilotExt select mode")
   map(cfg.keymaps.select_agent, state.select_agent, "CopilotExt select agent")
+  map(cfg.keymaps.select_chat, ui.select_chat, "CopilotExt browse chats")
+  map(cfg.keymaps.new_chat, ui.new_chat, "CopilotExt new chat")
+  map(cfg.keymaps.delete_chat, ui.delete_chat, "CopilotExt delete chat")
+  map(cfg.keymaps.accept_all_changes, edit_review.accept_all, "CopilotExt accept all changes in file")
+  map(cfg.keymaps.accept_all_changes_global, edit_review.accept_all_global, "CopilotExt accept all changes in all files")
   map(cfg.keymaps.inline_edit, ui.inline_edit, "CopilotExt inline edit", { "n", "v" })
   map(cfg.keymaps.quick_prompt, ui.quick_prompt, "CopilotExt quick prompt")
 end

@@ -1,4 +1,5 @@
 local agent = require("nvim-copilot-extension.agent")
+local chats = require("nvim-copilot-extension.chats")
 local client = require("nvim-copilot-extension.client")
 local config = require("nvim-copilot-extension.config")
 local context = require("nvim-copilot-extension.context")
@@ -12,6 +13,7 @@ local M = {}
 local panel = {
   buf = nil,
   win = nil,
+  session_id = nil,
   messages = {},
   next_id = 1,
   layout = {
@@ -20,6 +22,7 @@ local panel = {
   },
   composer = {
     editing_id = nil,
+    completion_base = nil,
   },
   active_assistant_id = nil,
 }
@@ -46,10 +49,12 @@ local function setup_highlights()
 end
 
 local function header_lines()
+  local current_chat = chats.current()
   return {
     "Copilot Extension",
     "",
     "Mode: " .. state.mode() .. "    Model: " .. state.model() .. "    Agent: " .. state.agent(),
+    "Chat: " .. (current_chat.title or "New chat"),
     "",
   }
 end
@@ -60,6 +65,26 @@ local function next_id()
   return id
 end
 
+local function sync_session()
+  if not panel.session_id then
+    return
+  end
+  chats.save_current({
+    id = panel.session_id,
+    title = chats.current().title,
+    next_id = panel.next_id,
+    messages = panel.messages,
+  })
+end
+
+local function load_session(session)
+  panel.session_id = session.id
+  panel.messages = vim.deepcopy(session.messages or {})
+  panel.next_id = tonumber(session.next_id) or 1
+  panel.active_assistant_id = nil
+  panel.composer.editing_id = nil
+end
+
 local function add_message(kind, opts)
   local message = vim.tbl_extend("force", {
     id = next_id(),
@@ -68,6 +93,7 @@ local function add_message(kind, opts)
     meta = {},
   }, opts or {})
   table.insert(panel.messages, message)
+  sync_session()
   return message
 end
 
@@ -132,6 +158,140 @@ local function composer_label()
   return "Prompt"
 end
 
+local function cursor_in_input()
+  if not panel.win or not vim.api.nvim_win_is_valid(panel.win) or not panel.layout.input_start then
+    return false
+  end
+  local cursor = vim.api.nvim_win_get_cursor(panel.win)
+  return cursor[1] >= panel.layout.input_start
+end
+
+local function file_ref_completion_context()
+  if not panel.win or not vim.api.nvim_win_is_valid(panel.win) or not panel.layout.input_start then
+    return nil
+  end
+
+  local cursor = vim.api.nvim_win_get_cursor(panel.win)
+  if cursor[1] < panel.layout.input_start then
+    return nil
+  end
+
+  local line = vim.api.nvim_buf_get_lines(panel.buf, cursor[1] - 1, cursor[1], false)[1] or ""
+  local before_cursor = line:sub(1, cursor[2])
+
+  local prefix = before_cursor:match("#file:([^%s]*)$")
+  if prefix ~= nil then
+    local start_col = before_cursor:match(".*()#file:[^%s]*$")
+    if not start_col then
+      return nil
+    end
+
+    return {
+      prefix = prefix,
+      start_col = start_col + 6,
+      trigger = "#file:",
+    }
+  end
+
+  local mention_prefix = before_cursor:match("@([^%s]*)$")
+  if mention_prefix == nil then
+    return nil
+  end
+
+  local mention_col = before_cursor:match(".*()@[^%s]*$")
+  if not mention_col then
+    return nil
+  end
+
+  local previous = mention_col > 1 and before_cursor:sub(mention_col - 1, mention_col - 1) or ""
+  if mention_col ~= 1 and not previous:match("[%s%(%[%{,]") then
+    return nil
+  end
+
+  return {
+    prefix = mention_prefix,
+    start_col = mention_col + 1,
+    trigger = "@",
+  }
+end
+
+local function trigger_file_completion()
+  local ctx = file_ref_completion_context()
+  if not ctx then
+    panel.composer.completion_base = nil
+    return false
+  end
+
+  local matches = context.complete_file_refs(ctx.prefix)
+  if #matches == 0 then
+    panel.composer.completion_base = nil
+    return false
+  end
+
+  panel.composer.completion_base = ctx.prefix
+  vim.schedule(function()
+    if not panel.buf or not vim.api.nvim_buf_is_valid(panel.buf) then
+      return
+    end
+    if vim.api.nvim_get_current_buf() ~= panel.buf then
+      return
+    end
+    if vim.api.nvim_get_mode().mode ~= "i" then
+      return
+    end
+    pcall(vim.fn.complete, ctx.start_col, matches)
+  end)
+  return true
+end
+
+local function maybe_complete_file_ref()
+  if vim.fn.pumvisible() == 1 then
+    return
+  end
+  trigger_file_completion()
+end
+
+local function termcodes(keys)
+  return vim.api.nvim_replace_termcodes(keys, true, false, true)
+end
+
+local function tab_complete()
+  if vim.fn.pumvisible() == 1 then
+    return termcodes("<C-n>")
+  end
+  if trigger_file_completion() then
+    return ""
+  end
+  return termcodes("<Tab>")
+end
+
+local function shift_tab_complete()
+  if vim.fn.pumvisible() == 1 then
+    return termcodes("<C-p>")
+  end
+  return termcodes("<S-Tab>")
+end
+
+local function enter_action()
+  if vim.fn.pumvisible() == 1 then
+    return termcodes("<C-y>")
+  end
+  vim.schedule(function()
+    require("nvim-copilot-extension.ui").submit_input()
+  end)
+  return ""
+end
+
+local function ctrl_space_complete()
+  if vim.fn.pumvisible() == 1 then
+    return termcodes("<C-n>")
+  end
+  if trigger_file_completion() then
+    return ""
+  end
+  return termcodes("<C-Space>")
+end
+
 local function focus_input(startinsert)
   if not panel.win or not vim.api.nvim_win_is_valid(panel.win) or not panel.layout.input_start then
     return
@@ -190,16 +350,20 @@ local function trim_after_message(message_id)
   while #panel.messages > index do
     table.remove(panel.messages)
   end
+  sync_session()
 end
 
 local function expected_lines(input_lines)
   local lines = vim.list_extend(header_lines(), { rule })
   local ranges = {}
   local line_no = #lines + 1
+  local previous_kind = nil
 
   for _, message in ipairs(panel.messages) do
     local start_line = line_no
-    table.insert(lines, "")
+    local compact_tool_row = (message.kind == "tool_call" or message.kind == "tool_result")
+      and (previous_kind == "tool_call" or previous_kind == "tool_result" or previous_kind == "assistant")
+    table.insert(lines, compact_tool_row and "  " or "")
     line_no = line_no + 1
 
     if message.kind == "user" then
@@ -246,6 +410,7 @@ local function expected_lines(input_lines)
       start_line = start_line,
       end_line = line_no - 1,
     })
+    previous_kind = message.kind
   end
 
   table.insert(lines, "")
@@ -388,6 +553,7 @@ local function update_message_content(id, content, meta)
   if meta then
     message.meta = vim.tbl_extend("force", message.meta or {}, meta)
   end
+  sync_session()
   render()
 end
 
@@ -422,6 +588,10 @@ local function finish_active_assistant(content)
 end
 
 local function ensure_panel()
+  if not panel.session_id then
+    load_session(chats.current())
+  end
+
   if panel.win and vim.api.nvim_win_is_valid(panel.win) then
     return
   end
@@ -432,13 +602,41 @@ local function ensure_panel()
     vim.bo[panel.buf].filetype = "copilotext"
     vim.bo[panel.buf].buftype = "nofile"
     vim.bo[panel.buf].bufhidden = "hide"
+    vim.bo[panel.buf].omnifunc = ""
+    vim.bo[panel.buf].completefunc = ""
+    vim.bo[panel.buf].complete = ""
     vim.api.nvim_buf_set_name(panel.buf, "Copilot Extension")
+    vim.b[panel.buf].completion = false
 
-    vim.keymap.set({ "n", "i" }, "<CR>", function()
+    vim.keymap.set("n", "<CR>", function()
       require("nvim-copilot-extension.ui").submit_input()
     end, { buffer = panel.buf, silent = true, desc = "CopilotExt submit prompt" })
+    vim.keymap.set("i", "<CR>", enter_action, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotExt confirm completion or submit prompt",
+    })
 
     vim.keymap.set("i", "<C-j>", "<CR>", { buffer = panel.buf, desc = "CopilotExt newline in prompt" })
+    vim.keymap.set("i", "<Tab>", tab_complete, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotExt file tag completion",
+    })
+    vim.keymap.set("i", "<S-Tab>", shift_tab_complete, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotExt previous completion item",
+    })
+    vim.keymap.set("i", "<C-Space>", ctrl_space_complete, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotExt trigger file tag completion",
+    })
 
     vim.keymap.set("n", "i", function()
       require("nvim-copilot-extension.ui").focus_prompt()
@@ -452,6 +650,16 @@ local function ensure_panel()
       buffer = panel.buf,
       callback = protect_input,
       desc = "CopilotExt protect transcript",
+    })
+
+    vim.api.nvim_create_autocmd("TextChangedI", {
+      buffer = panel.buf,
+      callback = function()
+        if cursor_in_input() then
+          maybe_complete_file_ref()
+        end
+      end,
+      desc = "CopilotExt auto-complete file mentions",
     })
 
     render({ input_lines = { "" } })
@@ -490,7 +698,9 @@ local function finalize_response(answer, err, errors)
   end
 
   finish_active_assistant(answer or "")
-  diff.preview_from_response(answer)
+  if diff.preview_from_response(answer) then
+    append_message("system_note", { content = "Diff review opened. Use a/r/u on each hunk, then A to apply the reviewed changes." })
+  end
   focus_input(false)
 end
 
@@ -529,6 +739,7 @@ local function send_message(prompt, rerun_message_id)
     end
     message.content = expanded
     trim_after_message(rerun_message_id)
+    sync_session()
   else
     append_message("user", { content = expanded })
   end
@@ -545,8 +756,12 @@ local function send_message(prompt, rerun_message_id)
   end
 
   if state.mode() == "agent" then
+    local history_messages = conversation_messages()
+    if #history_messages > 0 then
+      history_messages[#history_messages].content = enriched
+    end
     local assistant_message = start_assistant_message({ pending = true })
-    agent.run(expanded, {
+    agent.run(history_messages, errors, {
       on_assistant_start = function()
         update_message_content(assistant_message.id, "", { pending = true })
       end,
@@ -578,6 +793,9 @@ local function send_message(prompt, rerun_message_id)
           return
         end
         finish_active_assistant(answer or "")
+        if diff.preview_from_response(answer) then
+          append_message("system_note", { content = "Diff review opened. Use a/r/u on each hunk, then A to apply the reviewed changes." })
+        end
       end,
     })
     return
@@ -620,8 +838,65 @@ function M.clear()
   panel.messages = {}
   panel.active_assistant_id = nil
   panel.composer.editing_id = nil
+  panel.next_id = 1
+  sync_session()
   render({ input_lines = { "" } })
   focus_input(false)
+end
+
+function M.new_chat()
+  ensure_panel()
+  load_session(chats.new_session())
+  render({ input_lines = { "" } })
+  focus_input(false)
+  vim.notify("CopilotExt: new chat", vim.log.levels.INFO)
+end
+
+function M.select_chat()
+  ensure_panel()
+  local sessions = chats.list()
+  vim.ui.select(sessions, {
+    prompt = "Copilot chats",
+    format_item = function(item)
+      local suffix = item.id == panel.session_id and "  current" or ""
+      return chats.format(item) .. suffix
+    end,
+  }, function(choice)
+    if not choice then
+      return
+    end
+    local session = chats.switch(choice.id)
+    if not session then
+      vim.notify("Selected chat was not found", vim.log.levels.ERROR)
+      return
+    end
+    load_session(session)
+    render({ input_lines = { "" } })
+    focus_input(false)
+  end)
+end
+
+function M.delete_chat()
+  ensure_panel()
+  local current = chats.current()
+  vim.ui.select({ "Delete", "Cancel" }, {
+    prompt = string.format('Delete chat "%s"?', current.title or "New chat"),
+  }, function(choice)
+    if choice ~= "Delete" then
+      return
+    end
+
+    local session = chats.delete(panel.session_id)
+    if not session then
+      vim.notify("Chat not found", vim.log.levels.ERROR)
+      return
+    end
+
+    load_session(session)
+    render({ input_lines = { "" } })
+    focus_input(false)
+    vim.notify("CopilotExt: chat deleted", vim.log.levels.INFO)
+  end)
 end
 
 function M.send(prompt)
