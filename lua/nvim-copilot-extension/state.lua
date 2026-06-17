@@ -10,7 +10,7 @@ local state = {
 }
 
 local function state_path()
-  return vim.fn.stdpath("state") .. "/nvim-copilot-extension/state.json"
+  return vim.fn.stdpath("state") .. "/copilot-panel/state.json"
 end
 
 local function load()
@@ -80,30 +80,30 @@ function M.set_model(model)
   end
   state.model = model
   save()
-  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotExtStateChanged" })
-  vim.notify("CopilotExt model: " .. model, vim.log.levels.INFO)
+  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotPanelStateChanged" })
+  vim.notify("CopilotPanel model: " .. model, vim.log.levels.INFO)
 end
 
 function M.set_mode(mode)
   if not valid(cfg.mode.choices, mode) then
-    vim.notify("Invalid CopilotExt mode: " .. tostring(mode), vim.log.levels.ERROR)
+    vim.notify("Invalid CopilotPanel mode: " .. tostring(mode), vim.log.levels.ERROR)
     return
   end
   state.mode = mode
   save()
-  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotExtStateChanged" })
-  vim.notify("CopilotExt mode: " .. mode, vim.log.levels.INFO)
+  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotPanelStateChanged" })
+  vim.notify("CopilotPanel mode: " .. mode, vim.log.levels.INFO)
 end
 
 function M.set_agent(agent)
   if not cfg.agent.profiles[agent] then
-    vim.notify("Invalid CopilotExt agent: " .. tostring(agent), vim.log.levels.ERROR)
+    vim.notify("Invalid CopilotPanel agent: " .. tostring(agent), vim.log.levels.ERROR)
     return
   end
   state.agent = agent
   save()
-  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotExtStateChanged" })
-  vim.notify("CopilotExt agent: " .. agent, vim.log.levels.INFO)
+  vim.api.nvim_exec_autocmds("User", { pattern = "CopilotPanelStateChanged" })
+  vim.notify("CopilotPanel agent: " .. agent, vim.log.levels.INFO)
 end
 
 function M.select_model()

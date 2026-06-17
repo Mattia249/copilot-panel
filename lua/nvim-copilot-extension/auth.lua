@@ -280,7 +280,7 @@ function M.get_token(cb)
 
   local oauth = find_oauth_token()
   if not oauth then
-    cb(nil, "No Copilot credentials found. Run :CopilotExtAuth first.")
+    cb(nil, "No Copilot credentials found. Run :CopilotPanelAuth first.")
     return
   end
 

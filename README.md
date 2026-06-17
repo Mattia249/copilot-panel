@@ -1,4 +1,4 @@
-# nvim-copilot-extension
+# copilot-panel.nvim
 
 A Neovim Copilot chat and agent companion designed for LazyVim users.
 
@@ -7,7 +7,7 @@ setup (`zbirenbaum/copilot.lua` or `github/copilot.vim`) and adds a VS Code-like
 experience: a side chat panel, runtime model and mode switching, inline edits,
 file references, slash commands, and a conservative local agent loop.
 
-CopilotExt reuses `copilot.lua` credentials from `~/.config/github-copilot/auth.db`
+CopilotPanel reuses `copilot.lua` credentials from `~/.config/github-copilot/auth.db`
 when possible. If that database is unavailable, it falls back to
 `GITHUB_COPILOT_TOKEN` or `GH_COPILOT_TOKEN`.
 
@@ -15,7 +15,7 @@ when possible. If that database is unavailable, it falls back to
 
 ```lua
 {
-  "matti/nvim-copilot-extension",
+  "matti/copilot-panel",
   dependencies = {
     "zbirenbaum/copilot.lua",
   },
@@ -30,28 +30,31 @@ when possible. If that database is unavailable, it falls back to
 
 ## Commands
 
-- `:CopilotExtToggle` opens or closes the chat panel.
-- `:CopilotExtChat [prompt]` sends a chat prompt.
-- `:CopilotExtQuickPrompt` opens a small prompt input.
-- `:CopilotExtNewChat` starts a fresh chat session.
-- `:CopilotExtChats` browses and reopens previous chat sessions.
-- `:CopilotExtDeleteChat` deletes the current chat session.
-- `:CopilotExtAcceptAllChanges` accepts every pending AI edit in the current file.
-- `:CopilotExtInlineEdit` edits the visual selection or current line.
-- `:CopilotExtApplyLastDiff` applies the currently reviewed diff, skipping rejected hunks.
-- `:CopilotExtReviewLastDiff` reopens the last diff review window.
-- `:CopilotExtAuth` starts the `copilot.lua` sign-in flow.
-- `:CopilotExtAuthInfo` shows `copilot.lua` authentication details/token info.
-- `:CopilotExtMode chat|edit|agent` changes mode at runtime.
-- `:CopilotExtSelectMode` opens the runtime mode picker.
-- `:CopilotExtAgent implementer|reviewer|tester|planner` changes agent profile at runtime.
-- `:CopilotExtSelectAgent` opens the runtime agent picker.
-- `:CopilotExtModel <model>` changes model at runtime.
-- `:CopilotExtSelectModel` opens the runtime model picker.
-- `:CopilotExtModels` lists Copilot chat models available from the Copilot API.
-- `:CopilotExtTools` lists the agent tools available in Neovim.
-- `:CopilotExtStatus` prints current auth, model, and mode.
-- `:checkhealth nvim-copilot-extension` checks `curl`, Copilot auth, and runtime state.
+The public command prefix is `CopilotPanel`.
+
+- `:CopilotPanelToggle` opens or closes the chat panel.
+- `:CopilotPanelChat [prompt]` sends a chat prompt.
+- `:CopilotPanelQuickPrompt` opens a small prompt input.
+- `:CopilotPanelNewChat` starts a fresh chat session.
+- `:CopilotPanelChats` browses and reopens previous chat sessions.
+- `:CopilotPanelDeleteChat` deletes the current chat session.
+- `:CopilotPanelAcceptAllChanges` accepts every pending AI edit in the current file.
+- `:CopilotPanelAcceptAllChangesGlobal` accepts every pending AI edit across all files.
+- `:CopilotPanelInlineEdit` edits the visual selection or current line.
+- `:CopilotPanelApplyLastDiff` applies the currently reviewed diff, skipping rejected hunks.
+- `:CopilotPanelReviewLastDiff` reopens the last diff review window.
+- `:CopilotPanelAuth` starts the `copilot.lua` sign-in flow.
+- `:CopilotPanelAuthInfo` shows `copilot.lua` authentication details/token info.
+- `:CopilotPanelMode chat|edit|agent` changes mode at runtime.
+- `:CopilotPanelSelectMode` opens the runtime mode picker.
+- `:CopilotPanelAgent implementer|reviewer|tester|planner` changes agent profile at runtime.
+- `:CopilotPanelSelectAgent` opens the runtime agent picker.
+- `:CopilotPanelModel <model>` changes model at runtime.
+- `:CopilotPanelSelectModel` opens the runtime model picker.
+- `:CopilotPanelModels` lists Copilot chat models available from the Copilot API.
+- `:CopilotPanelTools` lists the agent tools available in Neovim.
+- `:CopilotPanelStatus` prints current auth, model, and mode.
+- `:checkhealth copilot-panel` checks `curl`, Copilot auth, and runtime state.
 
 In the side panel, type in the `Prompt` area at the bottom. Press `<Enter>` to
 send and `<C-j>` to insert a newline. Responses stream into the panel as tokens
@@ -61,7 +64,7 @@ the panel suggests workspace files automatically; use `<Tab>` and `<S-Tab>` to
 navigate the suggestions, `<Enter>` to confirm the current suggestion, and
 `<C-Space>` to trigger completion manually.
 
-Chats are persisted across sessions, can be reopened from `:CopilotExtChats`,
+Chats are persisted across sessions, can be reopened from `:CopilotPanelChats`,
 and keep conversational context between messages in both chat and agent mode.
 
 Default chat keymaps:
@@ -69,6 +72,8 @@ Default chat keymaps:
 - `<leader>ac` browses saved chats
 - `<leader>an` starts a new chat
 - `<leader>ad` deletes the current chat
+- `<leader>ay` accepts all pending AI changes in the current file
+- `<leader>aY` accepts all pending AI changes in every file
 
 When Copilot returns a unified diff, the extension opens a dedicated diff review
 split. Each hunk can be reviewed independently:
@@ -92,7 +97,7 @@ pending changes:
 
 ## Authentication
 
-Use `:CopilotExtAuth` to start the same sign-in flow as `:Copilot auth signin`.
+Use `:CopilotPanelAuth` to start the same sign-in flow as `:Copilot auth signin`.
 This creates the encrypted `~/.config/github-copilot/auth.db` used by
 `copilot.lua`.
 

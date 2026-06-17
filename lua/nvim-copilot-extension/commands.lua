@@ -15,60 +15,64 @@ local function map(lhs, rhs, desc, mode)
   vim.keymap.set(mode or "n", lhs, rhs, { desc = desc, silent = true })
 end
 
+local function create_command(name, fn, opts)
+  vim.api.nvim_create_user_command(name, fn, opts or {})
+end
+
 function M.setup(cfg)
-  vim.api.nvim_create_user_command("CopilotExtToggle", function()
+  create_command("CopilotPanelToggle", function()
     ui.toggle()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtChat", function(opts)
+  create_command("CopilotPanelChat", function(opts)
     ui.send(opts.args)
   end, { nargs = "*" })
 
-  vim.api.nvim_create_user_command("CopilotExtQuickPrompt", function()
+  create_command("CopilotPanelQuickPrompt", function()
     ui.quick_prompt()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtNewChat", function()
+  create_command("CopilotPanelNewChat", function()
     ui.new_chat()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtChats", function()
+  create_command("CopilotPanelChats", function()
     ui.select_chat()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtDeleteChat", function()
+  create_command("CopilotPanelDeleteChat", function()
     ui.delete_chat()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtAcceptAllChanges", function()
+  create_command("CopilotPanelAcceptAllChanges", function()
     edit_review.accept_all()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtAcceptAllChangesGlobal", function()
+  create_command("CopilotPanelAcceptAllChangesGlobal", function()
     edit_review.accept_all_global()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtInlineEdit", function(opts)
+  create_command("CopilotPanelInlineEdit", function(opts)
     ui.inline_edit(opts)
   end, { range = true })
 
-  vim.api.nvim_create_user_command("CopilotExtApplyLastDiff", function()
+  create_command("CopilotPanelApplyLastDiff", function()
     diff.apply_last()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtReviewLastDiff", function()
+  create_command("CopilotPanelReviewLastDiff", function()
     diff.open_last_review()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtAuth", function()
+  create_command("CopilotPanelAuth", function()
     auth.signin()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtAuthInfo", function()
+  create_command("CopilotPanelAuthInfo", function()
     auth.auth_info()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtMode", function(opts)
+  create_command("CopilotPanelMode", function(opts)
     state.set_mode(opts.args)
   end, {
     nargs = 1,
@@ -77,11 +81,11 @@ function M.setup(cfg)
     end,
   })
 
-  vim.api.nvim_create_user_command("CopilotExtSelectMode", function()
+  create_command("CopilotPanelSelectMode", function()
     state.select_mode()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtAgent", function(opts)
+  create_command("CopilotPanelAgent", function(opts)
     state.set_agent(opts.args)
     state.set_mode("agent")
   end, {
@@ -91,11 +95,11 @@ function M.setup(cfg)
     end,
   })
 
-  vim.api.nvim_create_user_command("CopilotExtSelectAgent", function()
+  create_command("CopilotPanelSelectAgent", function()
     state.select_agent()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtModel", function(opts)
+  create_command("CopilotPanelModel", function(opts)
     state.set_model(opts.args)
   end, {
     nargs = 1,
@@ -106,10 +110,10 @@ function M.setup(cfg)
     end,
   })
 
-  vim.api.nvim_create_user_command("CopilotExtModels", function()
+  create_command("CopilotPanelModels", function()
     models.list("chat", function(choices, err)
       if err then
-        vim.notify("Failed to get Copilot chat models: " .. err, vim.log.levels.ERROR)
+        vim.notify("Failed to get Copilot Panel chat models: " .. err, vim.log.levels.ERROR)
         return
       end
       local lines = vim.tbl_map(models.format, choices or {})
@@ -117,15 +121,15 @@ function M.setup(cfg)
     end)
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtTools", function()
+  create_command("CopilotPanelTools", function()
     vim.notify(tools.describe())
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtSelectModel", function()
+  create_command("CopilotPanelSelectModel", function()
     state.select_model()
   end, {})
 
-  vim.api.nvim_create_user_command("CopilotExtStatus", function()
+  create_command("CopilotPanelStatus", function()
     auth.status_details(function(details)
       local copilot = details.copilot or {}
       local copilot_state
@@ -144,7 +148,7 @@ function M.setup(cfg)
 
       vim.notify(
         string.format(
-          "CopilotExt: %s; %s; mode=%s, model=%s, agent=%s",
+          "CopilotPanel: %s; %s; mode=%s, model=%s, agent=%s",
           copilot_state,
           chat_state,
           state.mode(),
@@ -156,17 +160,17 @@ function M.setup(cfg)
     end)
   end, {})
 
-  map(cfg.keymaps.toggle_panel, ui.toggle, "CopilotExt toggle panel")
-  map(cfg.keymaps.select_model, state.select_model, "CopilotExt select model")
-  map(cfg.keymaps.select_mode, state.select_mode, "CopilotExt select mode")
-  map(cfg.keymaps.select_agent, state.select_agent, "CopilotExt select agent")
-  map(cfg.keymaps.select_chat, ui.select_chat, "CopilotExt browse chats")
-  map(cfg.keymaps.new_chat, ui.new_chat, "CopilotExt new chat")
-  map(cfg.keymaps.delete_chat, ui.delete_chat, "CopilotExt delete chat")
-  map(cfg.keymaps.accept_all_changes, edit_review.accept_all, "CopilotExt accept all changes in file")
-  map(cfg.keymaps.accept_all_changes_global, edit_review.accept_all_global, "CopilotExt accept all changes in all files")
-  map(cfg.keymaps.inline_edit, ui.inline_edit, "CopilotExt inline edit", { "n", "v" })
-  map(cfg.keymaps.quick_prompt, ui.quick_prompt, "CopilotExt quick prompt")
+  map(cfg.keymaps.toggle_panel, ui.toggle, "CopilotPanel toggle panel")
+  map(cfg.keymaps.select_model, state.select_model, "CopilotPanel select model")
+  map(cfg.keymaps.select_mode, state.select_mode, "CopilotPanel select mode")
+  map(cfg.keymaps.select_agent, state.select_agent, "CopilotPanel select agent")
+  map(cfg.keymaps.select_chat, ui.select_chat, "CopilotPanel browse chats")
+  map(cfg.keymaps.new_chat, ui.new_chat, "CopilotPanel new chat")
+  map(cfg.keymaps.delete_chat, ui.delete_chat, "CopilotPanel delete chat")
+  map(cfg.keymaps.accept_all_changes, edit_review.accept_all, "CopilotPanel accept all changes in file")
+  map(cfg.keymaps.accept_all_changes_global, edit_review.accept_all_global, "CopilotPanel accept all changes in all files")
+  map(cfg.keymaps.inline_edit, ui.inline_edit, "CopilotPanel inline edit", { "n", "v" })
+  map(cfg.keymaps.quick_prompt, ui.quick_prompt, "CopilotPanel quick prompt")
 end
 
 return M

@@ -1,6 +1,6 @@
 local M = {}
 
-local ns = vim.api.nvim_create_namespace("copilot-extension-edit-review")
+local ns = vim.api.nvim_create_namespace("copilot-panel-edit-review")
 local reviews_by_buf = {}
 
 local function split_lines(text)
@@ -114,7 +114,7 @@ local function open_target_buffer(resolved)
   local current_win = vim.api.nvim_get_current_win()
   local current_buf = vim.api.nvim_win_get_buf(current_win)
   local current_name = vim.api.nvim_buf_get_name(current_buf)
-  if current_name:match("Copilot Extension$") then
+  if current_name:match("Copilot Panel$") then
     pcall(vim.cmd, "wincmd p")
   end
 
@@ -189,7 +189,7 @@ local function render(review)
 
   if #review.hunks == 0 then
     clear_review(review)
-    vim.notify("CopilotExt: all suggested changes resolved for " .. short_path(review.path), vim.log.levels.INFO)
+    vim.notify("CopilotPanel: all suggested changes resolved for " .. short_path(review.path), vim.log.levels.INFO)
     return
   end
 
@@ -260,13 +260,13 @@ local function attach_buffer_keymaps(buf)
   local opts = { buffer = buf, silent = true }
   vim.keymap.set("n", "y", function()
     require("nvim-copilot-extension.edit_review").accept_current()
-  end, vim.tbl_extend("force", opts, { desc = "CopilotExt accept pending edit hunk" }))
+  end, vim.tbl_extend("force", opts, { desc = "CopilotPanel accept pending edit hunk" }))
   vim.keymap.set("n", "n", function()
     require("nvim-copilot-extension.edit_review").reject_current()
-  end, vim.tbl_extend("force", opts, { desc = "CopilotExt reject pending edit hunk" }))
+  end, vim.tbl_extend("force", opts, { desc = "CopilotPanel reject pending edit hunk" }))
   vim.keymap.set("n", "A", function()
     require("nvim-copilot-extension.edit_review").accept_all()
-  end, vim.tbl_extend("force", opts, { desc = "CopilotExt accept all pending edits" }))
+  end, vim.tbl_extend("force", opts, { desc = "CopilotPanel accept all pending edits" }))
 end
 
 function M.propose(path, desired_text)
@@ -333,7 +333,7 @@ function M.accept_all()
   review.current_lines = vim.deepcopy(review.desired_lines)
   write_review_file(review)
   clear_review(review)
-  vim.notify("CopilotExt: accepted all pending changes in " .. short_path(review.path), vim.log.levels.INFO)
+  vim.notify("CopilotPanel: accepted all pending changes in " .. short_path(review.path), vim.log.levels.INFO)
 end
 
 function M.accept_all_global()
@@ -359,7 +359,7 @@ function M.accept_all_global()
     clear_review(review)
   end
 
-  vim.notify(string.format("CopilotExt: accepted all pending changes in %d file%s", #pending, #pending == 1 and "" or "s"), vim.log.levels.INFO)
+  vim.notify(string.format("CopilotPanel: accepted all pending changes in %d file%s", #pending, #pending == 1 and "" or "s"), vim.log.levels.INFO)
 end
 
 function M.has_pending(buf)

@@ -29,7 +29,7 @@ local function curl_args(token, body)
     "-H",
     "Editor-Version: Neovim/0.11.0",
     "-H",
-    "Editor-Plugin-Version: nvim-copilot-extension/0.1.0",
+    "Editor-Plugin-Version: copilot-panel/0.1.0",
     "-H",
     "Copilot-Integration-Id: vscode-chat",
     "-d",

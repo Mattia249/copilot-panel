@@ -30,7 +30,7 @@ local panel = {
 local input_placeholder = "Type a message. Press <Enter> to send."
 local rule = string.rep("-", 40)
 local guarded = false
-local ns = vim.api.nvim_create_namespace("copilot-extension")
+local ns = vim.api.nvim_create_namespace("copilot-panel")
 
 local function add_hl(name, opts)
   vim.api.nvim_set_hl(0, name, opts)
@@ -51,7 +51,7 @@ end
 local function header_lines()
   local current_chat = chats.current()
   return {
-    "Copilot Extension",
+    "Copilot Panel",
     "",
     "Mode: " .. state.mode() .. "    Model: " .. state.model() .. "    Agent: " .. state.agent(),
     "Chat: " .. (current_chat.title or "New chat"),
@@ -605,51 +605,51 @@ local function ensure_panel()
     vim.bo[panel.buf].omnifunc = ""
     vim.bo[panel.buf].completefunc = ""
     vim.bo[panel.buf].complete = ""
-    vim.api.nvim_buf_set_name(panel.buf, "Copilot Extension")
+    vim.api.nvim_buf_set_name(panel.buf, "Copilot Panel")
     vim.b[panel.buf].completion = false
 
     vim.keymap.set("n", "<CR>", function()
       require("nvim-copilot-extension.ui").submit_input()
-    end, { buffer = panel.buf, silent = true, desc = "CopilotExt submit prompt" })
+    end, { buffer = panel.buf, silent = true, desc = "CopilotPanel submit prompt" })
     vim.keymap.set("i", "<CR>", enter_action, {
       buffer = panel.buf,
       expr = true,
       replace_keycodes = true,
-      desc = "CopilotExt confirm completion or submit prompt",
+      desc = "CopilotPanel confirm completion or submit prompt",
     })
 
-    vim.keymap.set("i", "<C-j>", "<CR>", { buffer = panel.buf, desc = "CopilotExt newline in prompt" })
+    vim.keymap.set("i", "<C-j>", "<CR>", { buffer = panel.buf, desc = "CopilotPanel newline in prompt" })
     vim.keymap.set("i", "<Tab>", tab_complete, {
       buffer = panel.buf,
       expr = true,
       replace_keycodes = true,
-      desc = "CopilotExt file tag completion",
+      desc = "CopilotPanel file tag completion",
     })
     vim.keymap.set("i", "<S-Tab>", shift_tab_complete, {
       buffer = panel.buf,
       expr = true,
       replace_keycodes = true,
-      desc = "CopilotExt previous completion item",
+      desc = "CopilotPanel previous completion item",
     })
     vim.keymap.set("i", "<C-Space>", ctrl_space_complete, {
       buffer = panel.buf,
       expr = true,
       replace_keycodes = true,
-      desc = "CopilotExt trigger file tag completion",
+      desc = "CopilotPanel trigger file tag completion",
     })
 
     vim.keymap.set("n", "i", function()
       require("nvim-copilot-extension.ui").focus_prompt()
-    end, { buffer = panel.buf, silent = true, desc = "CopilotExt focus prompt" })
+    end, { buffer = panel.buf, silent = true, desc = "CopilotPanel focus prompt" })
 
     vim.keymap.set("n", "e", function()
       require("nvim-copilot-extension.ui").edit_message_at_cursor()
-    end, { buffer = panel.buf, silent = true, desc = "CopilotExt edit previous user message" })
+    end, { buffer = panel.buf, silent = true, desc = "CopilotPanel edit previous user message" })
 
     vim.api.nvim_create_autocmd({ "TextChanged", "TextChangedI", "CursorMoved", "CursorMovedI" }, {
       buffer = panel.buf,
       callback = protect_input,
-      desc = "CopilotExt protect transcript",
+      desc = "CopilotPanel protect transcript",
     })
 
     vim.api.nvim_create_autocmd("TextChangedI", {
@@ -659,7 +659,7 @@ local function ensure_panel()
           maybe_complete_file_ref()
         end
       end,
-      desc = "CopilotExt auto-complete file mentions",
+      desc = "CopilotPanel auto-complete file mentions",
     })
 
     render({ input_lines = { "" } })
@@ -849,7 +849,7 @@ function M.new_chat()
   load_session(chats.new_session())
   render({ input_lines = { "" } })
   focus_input(false)
-  vim.notify("CopilotExt: new chat", vim.log.levels.INFO)
+  vim.notify("CopilotPanel: new chat", vim.log.levels.INFO)
 end
 
 function M.select_chat()
@@ -895,7 +895,7 @@ function M.delete_chat()
     load_session(session)
     render({ input_lines = { "" } })
     focus_input(false)
-    vim.notify("CopilotExt: chat deleted", vim.log.levels.INFO)
+    vim.notify("CopilotPanel: chat deleted", vim.log.levels.INFO)
   end)
 end
 
@@ -956,7 +956,7 @@ function M.inline_edit(opts)
 end
 
 vim.api.nvim_create_autocmd("User", {
-  pattern = "CopilotExtStateChanged",
+  pattern = "CopilotPanelStateChanged",
   callback = function()
     if panel.buf and vim.api.nvim_buf_is_valid(panel.buf) then
       render()

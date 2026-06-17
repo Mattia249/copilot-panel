@@ -11,7 +11,7 @@ local store = {
 }
 
 local function chats_path()
-  return vim.fn.stdpath("state") .. "/nvim-copilot-extension/chats.json"
+  return vim.fn.stdpath("state") .. "/copilot-panel/chats.json"
 end
 
 local function now()

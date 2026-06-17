@@ -11,7 +11,7 @@ local error = health.error or health.report_error
 local info = health.info or health.report_info
 
 function M.check()
-  start("nvim-copilot-extension")
+  start("copilot-panel")
 
   if vim.fn.executable("curl") == 1 then
     ok("curl is available")
@@ -37,4 +37,3 @@ function M.check()
 end
 
 return M
-

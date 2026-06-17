@@ -1,7 +1,7 @@
 local M = {}
 
 local last_review = nil
-local ns = vim.api.nvim_create_namespace("copilot-extension-diff")
+local ns = vim.api.nvim_create_namespace("copilot-panel-diff")
 
 local function split_lines(text)
   return vim.split(text or "", "\n", { plain = true })
@@ -29,12 +29,12 @@ local function current_review()
 end
 
 local function setup_highlights()
-  vim.api.nvim_set_hl(0, "CopilotExtDiffTitle", { link = "Title" })
-  vim.api.nvim_set_hl(0, "CopilotExtDiffHint", { link = "Comment" })
-  vim.api.nvim_set_hl(0, "CopilotExtDiffAccepted", { link = "DiffAdd" })
-  vim.api.nvim_set_hl(0, "CopilotExtDiffRejected", { link = "DiffDelete" })
-  vim.api.nvim_set_hl(0, "CopilotExtDiffPending", { link = "Special" })
-  vim.api.nvim_set_hl(0, "CopilotExtDiffApplied", { link = "String" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffTitle", { link = "Title" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffHint", { link = "Comment" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffAccepted", { link = "DiffAdd" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffRejected", { link = "DiffDelete" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffPending", { link = "Special" })
+  vim.api.nvim_set_hl(0, "CopilotPanelDiffApplied", { link = "String" })
 end
 
 local function status_text(status)
@@ -52,15 +52,15 @@ end
 
 local function status_hl(status)
   if status == "accepted" then
-    return "CopilotExtDiffAccepted"
+    return "CopilotPanelDiffAccepted"
   end
   if status == "rejected" then
-    return "CopilotExtDiffRejected"
+    return "CopilotPanelDiffRejected"
   end
   if status == "applied" then
-    return "CopilotExtDiffApplied"
+    return "CopilotPanelDiffApplied"
   end
-  return "CopilotExtDiffPending"
+  return "CopilotPanelDiffPending"
 end
 
 local function parse_file_path(header_lines)
@@ -212,14 +212,14 @@ local function decorate_review(review)
   end
 
   vim.api.nvim_buf_clear_namespace(review.buf, ns, 0, -1)
-  vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotExtDiffTitle", 0, 0, -1)
-  vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotExtDiffHint", 2, 0, -1)
+  vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotPanelDiffTitle", 0, 0, -1)
+  vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotPanelDiffHint", 2, 0, -1)
 
   local lines = vim.api.nvim_buf_get_lines(review.buf, 0, -1, false)
   for row, line in ipairs(lines) do
     local zero = row - 1
     if line:match("^File: ") then
-      vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotExtDiffHint", zero, 0, -1)
+      vim.api.nvim_buf_add_highlight(review.buf, ns, "CopilotPanelDiffHint", zero, 0, -1)
     end
   end
 
@@ -228,7 +228,7 @@ local function decorate_review(review)
       vim.api.nvim_buf_set_extmark(review.buf, ns, hunk.header_line - 1, 0, {
         virt_text = {
           { " " .. status_text(hunk.status) .. "  ", status_hl(hunk.status) },
-          { "a accept  r reject", "CopilotExtDiffHint" },
+          { "a accept  r reject", "CopilotPanelDiffHint" },
         },
         virt_text_pos = "eol",
       })
@@ -361,7 +361,7 @@ end
 local function apply_reviewed()
   local review = current_review()
   if not review then
-    vim.notify("No CopilotExt diff review available", vim.log.levels.WARN)
+    vim.notify("No CopilotPanel diff review available", vim.log.levels.WARN)
     return
   end
 
@@ -373,19 +373,19 @@ local function apply_reviewed()
 
   run_git_apply(diff_text, { "--check" }, function(check)
     if check.code ~= 0 then
-      vim.notify("CopilotExt diff check failed: " .. vim.trim(check.stderr or ""), vim.log.levels.ERROR)
+      vim.notify("CopilotPanel diff check failed: " .. vim.trim(check.stderr or ""), vim.log.levels.ERROR)
       return
     end
 
     run_git_apply(diff_text, {}, function(result)
       if result.code ~= 0 then
-        vim.notify("CopilotExt diff apply failed: " .. vim.trim(result.stderr or ""), vim.log.levels.ERROR)
+        vim.notify("CopilotPanel diff apply failed: " .. vim.trim(result.stderr or ""), vim.log.levels.ERROR)
         return
       end
 
       mark_applied(review)
       render_review(review)
-      vim.notify("CopilotExt reviewed diff applied", vim.log.levels.INFO)
+      vim.notify("CopilotPanel reviewed diff applied", vim.log.levels.INFO)
       vim.cmd("checktime")
     end)
   end)
@@ -409,31 +409,31 @@ local function ensure_review_buffer(review)
       vim.api.nvim_win_close(review.win, true)
       review.win = nil
     end
-  end, { buffer = review.buf, silent = true, desc = "Close CopilotExt diff review" })
+  end, { buffer = review.buf, silent = true, desc = "Close CopilotPanel diff review" })
 
   vim.keymap.set("n", "a", function()
     set_hunk_status("accepted")
-  end, { buffer = review.buf, silent = true, desc = "Accept CopilotExt diff hunk" })
+  end, { buffer = review.buf, silent = true, desc = "Accept CopilotPanel diff hunk" })
 
   vim.keymap.set("n", "r", function()
     set_hunk_status("rejected")
-  end, { buffer = review.buf, silent = true, desc = "Reject CopilotExt diff hunk" })
+  end, { buffer = review.buf, silent = true, desc = "Reject CopilotPanel diff hunk" })
 
   vim.keymap.set("n", "u", function()
     set_hunk_status("pending")
-  end, { buffer = review.buf, silent = true, desc = "Reset CopilotExt diff hunk" })
+  end, { buffer = review.buf, silent = true, desc = "Reset CopilotPanel diff hunk" })
 
   vim.keymap.set("n", "]c", function()
     move_hunk(1)
-  end, { buffer = review.buf, silent = true, desc = "Next CopilotExt diff hunk" })
+  end, { buffer = review.buf, silent = true, desc = "Next CopilotPanel diff hunk" })
 
   vim.keymap.set("n", "[c", function()
     move_hunk(-1)
-  end, { buffer = review.buf, silent = true, desc = "Previous CopilotExt diff hunk" })
+  end, { buffer = review.buf, silent = true, desc = "Previous CopilotPanel diff hunk" })
 
   vim.keymap.set("n", "A", function()
     apply_reviewed()
-  end, { buffer = review.buf, silent = true, desc = "Apply reviewed CopilotExt diff" })
+  end, { buffer = review.buf, silent = true, desc = "Apply reviewed CopilotPanel diff" })
 end
 
 function M.show(text)
@@ -484,7 +484,7 @@ end
 
 function M.open_last_review()
   if not last_review or not last_review.raw or last_review.raw == "" then
-    vim.notify("No CopilotExt diff review available", vim.log.levels.WARN)
+    vim.notify("No CopilotPanel diff review available", vim.log.levels.WARN)
     return
   end
   M.show(last_review.raw)
@@ -492,7 +492,7 @@ end
 
 function M.apply_last()
   if not last_review or not last_review.raw or last_review.raw == "" then
-    vim.notify("No CopilotExt diff to apply", vim.log.levels.WARN)
+    vim.notify("No CopilotPanel diff to apply", vim.log.levels.WARN)
     return
   end
   apply_reviewed()
