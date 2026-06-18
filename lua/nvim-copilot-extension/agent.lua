@@ -115,9 +115,10 @@ local function system_prompt()
     "You are running inside Neovim as a local coding agent with tool access.",
     "Active agent profile: " .. agent_name .. ". " .. agent_profile,
     "Use tools when needed instead of guessing workspace state.",
-    "Respond with exactly one JSON object and no markdown.",
+    "For tool calls, respond with exactly one JSON object and no markdown.",
     'To use a tool, respond with: {"type":"tool_call","tool":"read","args":{...},"reason":"optional"}',
-    'When you are done, respond with: {"type":"final","content":"your final answer"}',
+    'When you are done, respond with: {"type":"final","content":"your markdown-formatted final answer"}',
+    "You may use Markdown in your final answer: headings, lists, bold/italic, code blocks, inline code, and links.",
     "Do not include explanatory prose before or after a tool JSON object.",
     "Keep tool calls focused and minimal.",
     "When editing files, prefer the smallest safe change.",
@@ -125,6 +126,7 @@ local function system_prompt()
     "Do not rewrite an entire file with action=set unless the user explicitly asked to replace the whole file.",
     "When you produce final content, write it as the user-facing answer.",
     "After tools succeed, give a short summary and do not repeat raw tool logs, JSON, or absolute paths.",
+    "ANTI-LOOP RULES: do not make the exact same tool call twice. If a tool fails, change your approach or explain the blocker in a final answer. Do not retry identical searches or re-read the same file range. If you cannot make progress, stop and summarize.",
     cfg.agent.require_approval and "Edits and shell commands may require approval; if denied, adapt and continue." or "",
     tools.describe(),
   }
@@ -149,7 +151,25 @@ local function append_tool_result(messages, call, output, err)
   })
 end
 
-local function stream_text(text, handlers)
+local function call_key(call)
+  local args = call.args or {}
+  local sorted = {}
+  for k, v in pairs(args) do
+    table.insert(sorted, k .. "=" .. tostring(v))
+  end
+  table.sort(sorted)
+  return (call.tool or "") .. ":" .. table.concat(sorted, "|")
+end
+
+local function has_recent_call(recent, call)
+  return recent[call_key(call)] ~= nil
+end
+
+local function record_call(recent, call)
+  recent[call_key(call)] = true
+end
+
+local function stream_text(text, handlers, cancel_token)
   if handlers.on_assistant_start then
     handlers.on_assistant_start()
   end
@@ -165,6 +185,10 @@ local function stream_text(text, handlers)
   local index = 0
   local built = ""
   local function push()
+    if cancel_token and cancel_token.cancelled then
+      return
+    end
+
     index = index + 1
     if index > #chunks then
       if handlers.on_finish then
@@ -183,6 +207,15 @@ local function stream_text(text, handlers)
   push()
 end
 
+local active = nil
+
+function M.stop()
+  if active then
+    active.stop()
+    active = nil
+  end
+end
+
 function M.run(history_messages, errors, handlers)
   handlers = handlers or {}
   local cfg = config.get()
@@ -195,6 +228,21 @@ function M.run(history_messages, errors, handlers)
   local step = 0
   local max_steps = cfg.agent.max_steps or 8
   local assistant_started = false
+  local recent_calls = {}
+  local stopped = false
+  local current_job = nil
+  local cancel_token = { cancelled = false }
+
+  local instance = {
+    stop = function()
+      stopped = true
+      cancel_token.cancelled = true
+      if current_job and current_job.kill then
+        pcall(current_job.kill, current_job, "sigterm")
+      end
+    end,
+  }
+  active = instance
 
   local function start_assistant_once()
     if assistant_started then
@@ -207,6 +255,13 @@ function M.run(history_messages, errors, handlers)
   end
 
   local function finish(answer, err)
+    active = nil
+    if stopped then
+      if handlers.on_finish then
+        handlers.on_finish(nil, nil, errors)
+      end
+      return
+    end
     if err then
       if handlers.on_finish then
         handlers.on_finish(nil, err, errors)
@@ -221,17 +276,26 @@ function M.run(history_messages, errors, handlers)
           handlers.on_finish(final_answer, nil, errors)
         end
       end,
-    })
+    }, cancel_token)
   end
 
   local function run_step()
+    if stopped then
+      return
+    end
+
     step = step + 1
     if step > max_steps then
       finish(nil, "Agent reached the maximum number of steps")
       return
     end
 
-    client.chat(messages, function(answer, err)
+    current_job = client.chat(messages, function(answer, err)
+      current_job = nil
+      if stopped then
+        return
+      end
+
       if err then
         finish(nil, err)
         return
@@ -259,11 +323,24 @@ function M.run(history_messages, errors, handlers)
         content = vim.json.encode(decoded),
       })
 
+      if has_recent_call(recent_calls, decoded) then
+        table.insert(messages, {
+          role = "user",
+          content = "LOOP GUARD: You already made this exact tool call. Do not repeat it. Change your approach or provide a final answer.",
+        })
+      else
+        record_call(recent_calls, decoded)
+      end
+
       if handlers.on_tool then
         handlers.on_tool(decoded)
       end
 
       tools.execute(decoded, function(output, tool_err)
+        if stopped then
+          return
+        end
+
         if handlers.on_tool_result then
           handlers.on_tool_result(decoded, output, tool_err)
         end
@@ -274,6 +351,7 @@ function M.run(history_messages, errors, handlers)
   end
 
   run_step()
+  return instance
 end
 
 return M

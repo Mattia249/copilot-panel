@@ -160,6 +160,20 @@ function M.setup(cfg)
     end)
   end, {})
 
+  create_command("CopilotPanelUsage", function()
+    auth.usage(function(text, err)
+      if err then
+        vim.notify("CopilotPanel usage failed: " .. err, vim.log.levels.ERROR)
+        return
+      end
+      vim.notify(text, vim.log.levels.INFO)
+    end)
+  end, {})
+
+  create_command("CopilotPanelStop", function()
+    ui.stop_agent()
+  end, {})
+
   map(cfg.keymaps.toggle_panel, ui.toggle, "CopilotPanel toggle panel")
   map(cfg.keymaps.select_model, state.select_model, "CopilotPanel select model")
   map(cfg.keymaps.select_mode, state.select_mode, "CopilotPanel select mode")
@@ -171,6 +185,7 @@ function M.setup(cfg)
   map(cfg.keymaps.accept_all_changes_global, edit_review.accept_all_global, "CopilotPanel accept all changes in all files")
   map(cfg.keymaps.inline_edit, ui.inline_edit, "CopilotPanel inline edit", { "n", "v" })
   map(cfg.keymaps.quick_prompt, ui.quick_prompt, "CopilotPanel quick prompt")
+  map(cfg.keymaps.stop_agent, ui.stop_agent, "CopilotPanel stop running agent")
 end
 
 return M

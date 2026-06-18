@@ -39,6 +39,8 @@ local function curl_args(token, body)
 end
 
 function M.chat(messages, cb)
+  local job = { inner = nil, cancelled = false }
+
   models.resolve(state.model(), function(model, model_err)
     if not model then
       cb(nil, model_err)
@@ -51,9 +53,14 @@ function M.chat(messages, cb)
         return
       end
 
+      if job.cancelled then
+        return
+      end
+
       local body = request_body(model, messages, false)
 
-      vim.system(curl_args(token, body), { text = true }, function(result)
+      job.inner = vim.system(curl_args(token, body), { text = true }, function(result)
+        job.inner = nil
         vim.schedule(function()
           if result.code ~= 0 then
             cb(nil, result.stderr)
@@ -82,6 +89,15 @@ function M.chat(messages, cb)
       end)
     end)
   end)
+
+  function job:kill(signal)
+    self.cancelled = true
+    if self.inner and self.inner.kill then
+      self.inner:kill(signal or "sigterm")
+    end
+  end
+
+  return job
 end
 
 local function parse_sse_line(line)

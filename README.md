@@ -18,6 +18,9 @@ when possible. If that database is unavailable, it falls back to
   "matti/copilot-panel",
   dependencies = {
     "zbirenbaum/copilot.lua",
+    -- Optional: enables rich Markdown rendering in the panel (headings, lists,
+    -- code blocks, tables, callouts). Falls back to native conceal rendering.
+    { "MeanderingProgrammer/render-markdown.nvim", optional = true },
   },
   opts = {
     panel = { side = "right", width = 0.36 },
@@ -54,6 +57,8 @@ The public command prefix is `CopilotPanel`.
 - `:CopilotPanelModels` lists Copilot chat models available from the Copilot API.
 - `:CopilotPanelTools` lists the agent tools available in Neovim.
 - `:CopilotPanelStatus` prints current auth, model, and mode.
+- `:CopilotPanelUsage` shows recent Copilot usage from the GitHub API.
+- `:CopilotPanelStop` stops a running agent loop or streaming response.
 - `:checkhealth copilot-panel` checks `curl`, Copilot auth, and runtime state.
 
 In the side panel, type in the `Prompt` area at the bottom. Press `<Enter>` to
@@ -74,6 +79,7 @@ Default chat keymaps:
 - `<leader>ad` deletes the current chat
 - `<leader>ay` accepts all pending AI changes in the current file
 - `<leader>aY` accepts all pending AI changes in every file
+- `<leader>aS` stops a running agent loop or streaming response
 
 When Copilot returns a unified diff, the extension opens a dedicated diff review
 split. Each hunk can be reviewed independently:
@@ -150,3 +156,5 @@ In `agent` mode the extension can call local tools for:
 - `browser`: open a URL in your system browser
 
 `edit` and `execute` require approval by default.
+
+

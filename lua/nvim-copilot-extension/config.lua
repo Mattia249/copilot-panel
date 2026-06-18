@@ -40,10 +40,11 @@ local defaults = {
     accept_all_changes_global = "<leader>aY",
     inline_edit = "<leader>ae",
     quick_prompt = "<leader>ap",
+    stop_agent = "<leader>aS",
   },
   agent = {
     require_approval = true,
-    max_steps = 8,
+    max_steps = 20,
     default = "implementer",
     profiles = {
       implementer = "Implement features and fixes with concise plans and reviewable patches.",

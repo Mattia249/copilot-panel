@@ -25,6 +25,7 @@ local panel = {
     completion_base = nil,
   },
   active_assistant_id = nil,
+  agent_job = nil,
 }
 
 local input_placeholder = "Type a message. Press <Enter> to send."
@@ -290,6 +291,40 @@ local function ctrl_space_complete()
     return ""
   end
   return termcodes("<C-Space>")
+end
+
+local function backspace_action()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-e><BS>"
+  end
+  return "<BS>"
+end
+
+local function ctrl_w_action()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-e><C-w>"
+  end
+  return "<C-w>"
+end
+
+local function ctrl_u_action()
+  if vim.fn.pumvisible() == 1 then
+    return "<C-e><C-u>"
+  end
+  return "<C-u>"
+end
+
+local function setup_markdown_rendering(win)
+  local ok, render_markdown = pcall(require, "render-markdown")
+  if ok then
+    local current = vim.api.nvim_get_current_win()
+    pcall(vim.api.nvim_set_current_win, win)
+    pcall(render_markdown.buf_enable)
+    pcall(vim.api.nvim_set_current_win, current)
+    return
+  end
+  vim.wo[win].conceallevel = 2
+  vim.wo[win].concealcursor = "nc"
 end
 
 local function focus_input(startinsert)
@@ -599,7 +634,7 @@ local function ensure_panel()
   if not panel.buf or not vim.api.nvim_buf_is_valid(panel.buf) then
     setup_highlights()
     panel.buf = vim.api.nvim_create_buf(false, true)
-    vim.bo[panel.buf].filetype = "copilotext"
+    vim.bo[panel.buf].filetype = "markdown"
     vim.bo[panel.buf].buftype = "nofile"
     vim.bo[panel.buf].bufhidden = "hide"
     vim.bo[panel.buf].omnifunc = ""
@@ -636,6 +671,31 @@ local function ensure_panel()
       expr = true,
       replace_keycodes = true,
       desc = "CopilotPanel trigger file tag completion",
+    })
+
+    vim.keymap.set("i", "<BS>", backspace_action, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotPanel backspace closes completion",
+    })
+    vim.keymap.set("i", "<C-h>", backspace_action, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotPanel backspace closes completion",
+    })
+    vim.keymap.set("i", "<C-w>", ctrl_w_action, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotPanel delete word closes completion",
+    })
+    vim.keymap.set("i", "<C-u>", ctrl_u_action, {
+      buffer = panel.buf,
+      expr = true,
+      replace_keycodes = true,
+      desc = "CopilotPanel delete to start closes completion",
     })
 
     vim.keymap.set("n", "i", function()
@@ -679,6 +739,7 @@ local function ensure_panel()
   panel.win = vim.api.nvim_get_current_win()
   vim.api.nvim_win_set_buf(panel.win, panel.buf)
   vim.wo[panel.win].wrap = true
+  setup_markdown_rendering(panel.win)
 end
 
 local function finalize_response(answer, err, errors)
@@ -761,7 +822,7 @@ local function send_message(prompt, rerun_message_id)
       history_messages[#history_messages].content = enriched
     end
     local assistant_message = start_assistant_message({ pending = true })
-    agent.run(history_messages, errors, {
+    panel.agent_job = agent.run(history_messages, errors, {
       on_assistant_start = function()
         update_message_content(assistant_message.id, "", { pending = true })
       end,
@@ -781,6 +842,7 @@ local function send_message(prompt, rerun_message_id)
         })
       end,
       on_finish = function(answer, err, agent_errors)
+        panel.agent_job = nil
         if agent_errors then
           for _, item in ipairs(agent_errors) do
             append_message("system_note", { content = item })
@@ -953,6 +1015,18 @@ function M.inline_edit(opts)
     prompt = "Edit the current line in context. Return a unified diff. #buffer"
   end
   M.send(prompt)
+end
+
+function M.stop_agent()
+  if panel.agent_job then
+    agent.stop()
+    panel.agent_job = nil
+    append_message("system_note", { content = "Agent stopped by user." })
+    finish_active_assistant("")
+    focus_input(false)
+  else
+    vim.notify("CopilotPanel: no agent is running", vim.log.levels.INFO)
+  end
 end
 
 vim.api.nvim_create_autocmd("User", {

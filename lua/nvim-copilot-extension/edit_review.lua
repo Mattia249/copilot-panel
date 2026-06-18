@@ -100,6 +100,21 @@ local function visible_target_win(buf)
   end
 end
 
+local function is_panel_win(win)
+  local buf = vim.api.nvim_win_get_buf(win)
+  local name = vim.api.nvim_buf_get_name(buf)
+  return name:match("Copilot Panel$") ~= nil
+end
+
+local function find_main_win()
+  for _, win in ipairs(vim.api.nvim_list_wins()) do
+    if not is_panel_win(win) then
+      return win
+    end
+  end
+  return nil
+end
+
 local function open_target_buffer(resolved)
   local buf = vim.fn.bufnr(resolved, true)
   if vim.fn.bufloaded(buf) ~= 1 then
@@ -111,11 +126,11 @@ local function open_target_buffer(resolved)
     return buf, win
   end
 
-  local current_win = vim.api.nvim_get_current_win()
-  local current_buf = vim.api.nvim_win_get_buf(current_win)
-  local current_name = vim.api.nvim_buf_get_name(current_buf)
-  if current_name:match("Copilot Panel$") then
-    pcall(vim.cmd, "wincmd p")
+  local main_win = find_main_win()
+  if main_win then
+    vim.api.nvim_set_current_win(main_win)
+  else
+    vim.cmd("split")
   end
 
   vim.cmd("edit " .. vim.fn.fnameescape(resolved))
@@ -273,7 +288,18 @@ function M.propose(path, desired_text)
   local resolved = vim.fn.fnamemodify(path, ":p")
   local buf, win = open_target_buffer(resolved)
   if vim.bo[buf].modified then
-    return nil, "Save or discard local changes in " .. short_path(path) .. " before accepting AI edits"
+    local ok, write_err
+    if vim.bo[buf].buftype == "" then
+      ok, write_err = pcall(vim.cmd, "write")
+    else
+      ok, write_err = pcall(function()
+        vim.fn.writefile(vim.api.nvim_buf_get_lines(buf, 0, -1, false), resolved)
+        vim.bo[buf].modified = false
+      end)
+    end
+    if not ok then
+      return nil, "Could not save " .. short_path(path) .. " before applying AI edits: " .. tostring(write_err)
+    end
   end
 
   local review = reviews_by_buf[buf]

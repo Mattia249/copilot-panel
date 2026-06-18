@@ -41,6 +41,13 @@ local function read_file(path, start_line, end_line)
   end
 
   local lines = vim.fn.readfile(resolved)
+  if #lines == 0 then
+    return table.concat({
+      "Path: " .. resolved,
+      "Lines: 0-0 (empty file)",
+    }, "\n")
+  end
+
   local from_line = math.max(1, tonumber(start_line) or 1)
   local to_line = math.min(#lines, tonumber(end_line) or #lines)
   if to_line < from_line then

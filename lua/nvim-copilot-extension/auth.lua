@@ -44,6 +44,7 @@ local function find_oauth_token()
     vim.fn.stdpath("config") .. "/github-copilot/hosts.json",
     vim.fn.stdpath("data") .. "/github-copilot/hosts.json",
     vim.fn.expand("~/.config/github-copilot/hosts.json"),
+    vim.fn.expand("~/.github-copilot/hosts.json"),
   }
 
   for _, path in ipairs(paths) do
@@ -56,6 +57,59 @@ local function find_oauth_token()
       end
     end
   end
+end
+
+local function read_plaintext_auth_db_token(cb)
+  local has_db, db = M.local_credentials()
+  if not has_db then
+    cb(nil)
+    return
+  end
+
+  if vim.fn.executable("sqlite3") ~= 1 then
+    cb(nil)
+    return
+  end
+
+  vim.system({
+    "sqlite3",
+    "-batch",
+    "-noheader",
+    db,
+    "SELECT CAST(token_ciphertext AS TEXT) FROM oauth_tokens WHERE token_schema_version = 0 ORDER BY last_used_at DESC LIMIT 1;",
+  }, { text = true }, function(result)
+    vim.schedule(function()
+      local token = vim.trim(result.stdout or "")
+      if result.code == 0 and token ~= "" then
+        cb(token)
+      else
+        cb(nil)
+      end
+    end)
+  end)
+end
+
+function M.get_oauth_token(cb)
+  local env_token = vim.env.GITHUB_TOKEN or vim.env.GH_TOKEN
+  if env_token and env_token ~= "" then
+    cb(env_token)
+    return
+  end
+
+  local oauth = find_oauth_token()
+  if oauth then
+    cb(oauth)
+    return
+  end
+
+  read_plaintext_auth_db_token(function(plaintext)
+    if plaintext then
+      cb(plaintext)
+      return
+    end
+
+    cb(nil, "No GitHub OAuth token found. :CopilotPanelAuthInfo uses the encrypted copilot.lua auth.db, while :CopilotPanelUsage needs a GitHub OAuth token. Set GITHUB_TOKEN/GH_TOKEN or create ~/.config/github-copilot/hosts.json with an oauth_token field.")
+  end)
 end
 
 local function copilot_lua_token()
@@ -311,6 +365,77 @@ function M.status_details(cb)
     M.copilot_status(function(status)
       details.copilot = status
       cb(details)
+    end)
+  end)
+end
+
+function M.usage(cb)
+  M.get_oauth_token(function(token, err)
+    if not token then
+      cb(nil, err)
+      return
+    end
+
+    vim.system({
+      "curl",
+      "-sS",
+      "-H",
+      "Authorization: token " .. token,
+      "-H",
+      "Accept: application/vnd.github+json",
+      "-H",
+      "X-GitHub-Api-Version: 2022-11-28",
+      "https://api.github.com/user/copilot/usage?per_page=7",
+    }, { text = true }, function(result)
+      vim.schedule(function()
+        if result.code ~= 0 then
+          cb(nil, result.stderr ~= "" and result.stderr or "Copilot usage request failed")
+          return
+        end
+
+        local ok, decoded = pcall(vim.json.decode, result.stdout)
+        if not ok or type(decoded) ~= "table" then
+          cb(nil, "Invalid Copilot usage response")
+          return
+        end
+
+        if decoded.message then
+          cb(nil, decoded.message)
+          return
+        end
+
+        if #decoded == 0 then
+          cb("No Copilot usage data available.")
+          return
+        end
+
+        local lines = { "Copilot usage (last " .. #decoded .. " days):" }
+        local total_accepted = 0
+        local total_suggested = 0
+        local total_chat = 0
+        for _, day in ipairs(decoded) do
+          local suggestions = day.total_suggestions_count or 0
+          local acceptances = day.total_acceptances_count or 0
+          local chat_turns = day.total_chat_turns or 0
+          total_accepted = total_accepted + acceptances
+          total_suggested = total_suggested + suggestions
+          total_chat = total_chat + chat_turns
+          table.insert(lines, string.format(
+            "%s: %d/%d code suggestions accepted, %d chat turns",
+            day.day,
+            acceptances,
+            suggestions,
+            chat_turns
+          ))
+        end
+        table.insert(lines, string.format(
+          "Total: %d/%d code suggestions accepted, %d chat turns",
+          total_accepted,
+          total_suggested,
+          total_chat
+        ))
+        cb(table.concat(lines, "\n"))
+      end)
     end)
   end)
 end
